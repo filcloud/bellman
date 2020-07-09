@@ -201,4 +201,55 @@ where
 
         Ok(())
     }
+
+    /// Performs inplace FFT on `a`
+    /// * `omega` - Special value `omega` is used for FFT over finite-fields
+    /// * `lgn` - Specifies log2 of number of elements
+    pub fn inplace_fft(&mut self, a: &mut [E::Fr], omega: &E::Fr, lgn: u32) -> GPUResult<()> {
+        if locks::PriorityLock::should_break(self.priority) {
+            return Err(GPUError::GPUTaken);
+        }
+
+        let n = 1 << lgn;
+
+        let ta = unsafe {
+            std::mem::transmute::<&mut [E::Fr], &mut [structs::PrimeFieldStruct<E::Fr>]>(a)
+        };
+
+        let max_deg = cmp::min(MAX_RADIX_DEGREE, lgn);
+        self.setup_pq(omega, n, max_deg)?;
+
+        self.fft_src_buffer.write(&*ta).enq()?;
+
+        let kernel = self
+            .proque
+            .kernel_builder("reverse_bits")
+            .global_work_size([n])
+            .arg(&self.fft_src_buffer)
+            .arg(lgn)
+            .build()?;
+        unsafe {
+            kernel.enq()?;
+        } // Running a GPU kernel is unsafe!
+
+        for lgm in 0..lgn {
+            let kernel = self
+                .proque
+                .kernel_builder("inplace_fft")
+                .global_work_size([n >> lgm >> 1])
+                .arg(&self.fft_src_buffer)
+                .arg(&self.fft_omg_buffer)
+                .arg(lgn)
+                .arg(lgm)
+                .build()?;
+            unsafe {
+                kernel.enq()?;
+            } // Running a GPU kernel is unsafe!
+        }
+
+        self.fft_src_buffer.read(ta).enq()?;
+        self.proque.finish()?; // Wait for all commands in the queue (Including read command)
+
+        Ok(())
+    }
 }
