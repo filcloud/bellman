@@ -1,10 +1,10 @@
 use crate::gpu::get_platform;
 use crate::gpu::{
     error::{GPUError, GPUResult},
-    get_devices, locks, sources, structs,
+    get_devices, locks, sources, structs, utils,
 };
 use ff::Field;
-use log::info;
+use log::*;
 use ocl::{Buffer, MemFlags, ProQue};
 use paired::Engine;
 use std::cmp;
@@ -81,8 +81,8 @@ where
     /// * `max_deg` - The precalculated values pq` and `omegas` are valid for radix degrees up to `max_deg`
     fn radix_fft_round(
         &mut self,
-        fft_src_buffer: &Buffer::<structs::PrimeFieldStruct<E::Fr>>,
-        fft_dst_buffer: &Buffer::<structs::PrimeFieldStruct<E::Fr>>,
+        fft_src_buffer: &Buffer<structs::PrimeFieldStruct<E::Fr>>,
+        fft_dst_buffer: &Buffer<structs::PrimeFieldStruct<E::Fr>>,
         lgn: u32,
         lgp: u32,
         deg: u32,
@@ -186,7 +186,15 @@ where
         let mut lgp = 0u32;
         while lgp < lgn {
             let deg = cmp::min(max_deg, lgn - lgp);
-            self.radix_fft_round(&fft_src_buffer, &fft_dst_buffer, lgn, lgp, deg, max_deg, in_src)?;
+            self.radix_fft_round(
+                &fft_src_buffer,
+                &fft_dst_buffer,
+                lgn,
+                lgp,
+                deg,
+                max_deg,
+                in_src,
+            )?;
             lgp += deg;
             in_src = !in_src; // Destination of this FFT round is source of the next round.
         }
@@ -258,6 +266,14 @@ where
     }
 
     pub fn fft(&mut self, a: &mut [E::Fr], omega: &E::Fr, lgn: u32) -> GPUResult<()> {
-        self.inplace_fft(a, omega, lgn)
+        const MIN_RADIX_MEMORY: u64 = 9 * 1024 * 1024 * 1024; // 9GB
+        let d = self.proque.device();
+        let mem = utils::get_memory(d)?;
+        if mem > MIN_RADIX_MEMORY {
+            self.radix_fft(a, omega, lgn)
+        } else {
+            warn!("FFT: Memory not enough for radix_fft! Using inplace_fft instead...");
+            self.inplace_fft(a, omega, lgn)
+        }
     }
 }
