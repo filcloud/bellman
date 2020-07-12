@@ -20,8 +20,6 @@ where
     E: Engine,
 {
     proque: ProQue,
-    fft_src_buffer: Buffer<structs::PrimeFieldStruct<E::Fr>>,
-    fft_dst_buffer: Buffer<structs::PrimeFieldStruct<E::Fr>>,
     fft_pq_buffer: Buffer<structs::PrimeFieldStruct<E::Fr>>,
     fft_omg_buffer: Buffer<structs::PrimeFieldStruct<E::Fr>>,
     _lock: locks::GPULock, // RFC 1857: struct fields are dropped in the same order as they are declared.
@@ -53,17 +51,6 @@ where
             .src(src)
             .dims(n)
             .build()?;
-
-        let srcbuff = Buffer::builder()
-            .queue(pq.queue().clone())
-            .flags(MemFlags::new().read_write())
-            .len(n)
-            .build()?;
-        let dstbuff = Buffer::builder()
-            .queue(pq.queue().clone())
-            .flags(MemFlags::new().read_write())
-            .len(n)
-            .build()?;
         let pqbuff = Buffer::builder()
             .queue(pq.queue().clone())
             .flags(MemFlags::new().read_write())
@@ -80,8 +67,6 @@ where
 
         Ok(FFTKernel {
             proque: pq,
-            fft_src_buffer: srcbuff,
-            fft_dst_buffer: dstbuff,
             fft_pq_buffer: pqbuff,
             fft_omg_buffer: omgbuff,
             _lock: lock,
@@ -96,6 +81,8 @@ where
     /// * `max_deg` - The precalculated values pq` and `omegas` are valid for radix degrees up to `max_deg`
     fn radix_fft_round(
         &mut self,
+        fft_src_buffer: &Buffer::<structs::PrimeFieldStruct<E::Fr>>,
+        fft_dst_buffer: &Buffer::<structs::PrimeFieldStruct<E::Fr>>,
         lgn: u32,
         lgp: u32,
         deg: u32,
@@ -114,14 +101,14 @@ where
             .global_work_size([n >> deg << lwsd])
             .local_work_size(1 << lwsd)
             .arg(if in_src {
-                &self.fft_src_buffer
+                fft_src_buffer
             } else {
-                &self.fft_dst_buffer
+                fft_dst_buffer
             })
             .arg(if in_src {
-                &self.fft_dst_buffer
+                fft_dst_buffer
             } else {
-                &self.fft_src_buffer
+                fft_src_buffer
             })
             .arg(&self.fft_pq_buffer)
             .arg(&self.fft_omg_buffer)
@@ -176,6 +163,17 @@ where
     pub fn radix_fft(&mut self, a: &mut [E::Fr], omega: &E::Fr, lgn: u32) -> GPUResult<()> {
         let n = 1 << lgn;
 
+        let fft_src_buffer = Buffer::<structs::PrimeFieldStruct<E::Fr>>::builder()
+            .queue(self.proque.queue().clone())
+            .flags(MemFlags::new().read_write())
+            .len(n)
+            .build()?;
+        let fft_dst_buffer = Buffer::<structs::PrimeFieldStruct<E::Fr>>::builder()
+            .queue(self.proque.queue().clone())
+            .flags(MemFlags::new().read_write())
+            .len(n)
+            .build()?;
+
         let ta = unsafe {
             std::mem::transmute::<&mut [E::Fr], &mut [structs::PrimeFieldStruct<E::Fr>]>(a)
         };
@@ -183,19 +181,19 @@ where
         let max_deg = cmp::min(MAX_RADIX_DEGREE, lgn);
         self.setup_pq(omega, n, max_deg)?;
 
-        self.fft_src_buffer.write(&*ta).enq()?;
+        fft_src_buffer.write(&*ta).enq()?;
         let mut in_src = true;
         let mut lgp = 0u32;
         while lgp < lgn {
             let deg = cmp::min(max_deg, lgn - lgp);
-            self.radix_fft_round(lgn, lgp, deg, max_deg, in_src)?;
+            self.radix_fft_round(&fft_src_buffer, &fft_dst_buffer, lgn, lgp, deg, max_deg, in_src)?;
             lgp += deg;
             in_src = !in_src; // Destination of this FFT round is source of the next round.
         }
         if in_src {
-            self.fft_src_buffer.read(ta).enq()?;
+            fft_src_buffer.read(ta).enq()?;
         } else {
-            self.fft_dst_buffer.read(ta).enq()?;
+            fft_dst_buffer.read(ta).enq()?;
         }
         self.proque.finish()?; // Wait for all commands in the queue (Including read command)
 
@@ -212,6 +210,12 @@ where
 
         let n = 1 << lgn;
 
+        let fft_buffer = Buffer::<structs::PrimeFieldStruct<E::Fr>>::builder()
+            .queue(self.proque.queue().clone())
+            .flags(MemFlags::new().read_write())
+            .len(n)
+            .build()?;
+
         let ta = unsafe {
             std::mem::transmute::<&mut [E::Fr], &mut [structs::PrimeFieldStruct<E::Fr>]>(a)
         };
@@ -219,13 +223,13 @@ where
         let max_deg = cmp::min(MAX_RADIX_DEGREE, lgn);
         self.setup_pq(omega, n, max_deg)?;
 
-        self.fft_src_buffer.write(&*ta).enq()?;
+        fft_buffer.write(&*ta).enq()?;
 
         let kernel = self
             .proque
             .kernel_builder("reverse_bits")
             .global_work_size([n])
-            .arg(&self.fft_src_buffer)
+            .arg(&fft_buffer)
             .arg(lgn)
             .build()?;
         unsafe {
@@ -236,8 +240,8 @@ where
             let kernel = self
                 .proque
                 .kernel_builder("inplace_fft")
-                .global_work_size([n >> lgm >> 1])
-                .arg(&self.fft_src_buffer)
+                .global_work_size([n >> 1])
+                .arg(&fft_buffer)
                 .arg(&self.fft_omg_buffer)
                 .arg(lgn)
                 .arg(lgm)
@@ -247,9 +251,13 @@ where
             } // Running a GPU kernel is unsafe!
         }
 
-        self.fft_src_buffer.read(ta).enq()?;
+        fft_buffer.read(ta).enq()?;
         self.proque.finish()?; // Wait for all commands in the queue (Including read command)
 
         Ok(())
+    }
+
+    pub fn fft(&mut self, a: &mut [E::Fr], omega: &E::Fr, lgn: u32) -> GPUResult<()> {
+        self.inplace_fft(a, omega, lgn)
     }
 }

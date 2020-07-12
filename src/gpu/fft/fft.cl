@@ -93,21 +93,15 @@ __kernel void inplace_fft(__global FIELD* a, // Source buffer
 {
   uint gid = get_global_id(0);
   uint n = 1 << lgn;
-  FIELD w_m = omegas[lgn - 1 - lgm];
   uint m = 1 << lgm;
-  uint k = 2 * m * gid;
-  if(k < n) {
-    FIELD w = FIELD_ONE;
-    for(uint j = 0; j < m; j++) {
-      FIELD t = a[k + j + m];
-      t = FIELD_mul(t, w);
-      FIELD tmp = a[k + j];
-      tmp = FIELD_sub(tmp, t);
-      a[k + j + m] = tmp;
-      a[k + j] = FIELD_add(a[k + j], t);
-      w = FIELD_mul(w, w_m);
-    }
-  }
+  uint j = gid & (m - 1);
+  uint k = 2 * m * (gid >> lgm);
+  FIELD w = FIELD_pow_lookup(omegas, j << (lgn - 1 - lgm));
+  FIELD t = FIELD_mul(a[k + j + m], w);
+  FIELD tmp = a[k + j];
+  tmp = FIELD_sub(tmp, t);
+  a[k + j + m] = tmp;
+  a[k + j] = FIELD_add(a[k + j], t);
 }
 
 /// Multiplies all of the elements by `field`
