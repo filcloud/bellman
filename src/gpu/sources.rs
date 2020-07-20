@@ -38,9 +38,9 @@ where
     E: Engine,
 {
     vec![
-        ffgen::field::<E::Fr>("Fr"),
+        ffgen::field::<E::Fr, ffgen::Limb32>("Fr"),
         fft("Fr"),
-        ffgen::field::<E::Fq>("Fq"),
+        ffgen::field::<E::Fq, ffgen::Limb32>("Fq"),
         ec("Fq", "G1"),
         multiexp("G1", "Fr"),
         field2("Fq2", "Fq"),
