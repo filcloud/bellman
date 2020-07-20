@@ -38,7 +38,7 @@ where
         // Select the first device for FFT
         let device = devices[0].clone();
 
-        let src = sources::kernel::<E>(device.brand() == opencl::Brand::Amd);
+        let src = sources::kernel::<E>(device.brand() == opencl::Brand::Nvidia);
 
         let program = opencl::Program::from_opencl(device, &src)?;
         let pq_buffer = program.create_buffer::<E::Fr>(1 << MAX_LOG2_RADIX >> 1)?;
