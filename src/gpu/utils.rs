@@ -1,7 +1,8 @@
 use crate::gpu::error::{GPUError, GPUResult};
 use ocl::{Device, Platform};
+use super::GPU_NVIDIA_DEVICES;
 
-use log::{info, warn};
+use log::{info, warn, error};
 use std::collections::HashMap;
 use std::env;
 
@@ -88,4 +89,20 @@ pub fn get_memory(d: Device) -> GPUResult<u64> {
         ocl::enums::DeviceInfoResult::GlobalMemSize(sz) => Ok(sz),
         _ => Err(GPUError::Simple("Cannot extract GPU memory!")),
     }
+}
+
+pub fn get_gpu_index() -> GPUResult<Device> {
+    let devices = &GPU_NVIDIA_DEVICES;
+    if devices.is_empty() {
+        return Err(GPUError::Simple("No working GPUs found!"));
+    }
+    let index: usize = std::env::var("BELLMAN_GPU_INDEX").or::<std::env::VarError>(Ok(String::from("0")))
+        .and_then(|v| match v.parse() {
+            Ok(val) => Ok(val),
+            Err(_) => {
+                error!("Invalid BELLMAN_GPU_INDEX! Defaulting to 0...");
+                Ok(0)
+            }
+        }).unwrap();
+    Ok(devices[index])
 }

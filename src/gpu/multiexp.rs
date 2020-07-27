@@ -303,7 +303,7 @@ where
     pub fn create(priority: bool) -> GPUResult<MultiexpKernel<E>> {
         let lock = locks::GPULock::lock();
 
-        let kernels: Vec<_> = GPU_NVIDIA_DEVICES
+        let kernels: Vec<_> = vec![utils::get_gpu_index()?]
             .iter()
             .map(|d| SingleMultiexpKernel::<E>::create(*d, priority))
             .filter(|res| res.is_ok())

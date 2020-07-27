@@ -2,6 +2,7 @@ use crate::gpu::{
     error::{GPUError, GPUResult},
     locks, sources, structs, GPU_NVIDIA_DEVICES,
 };
+use super::utils;
 use ff::Field;
 use log::info;
 use ocl::{Buffer, MemFlags, ProQue};
@@ -40,6 +41,7 @@ where
             return Err(GPUError::Simple("No working GPUs found!"));
         }
         let device = devices[0]; // Select the first device for FFT
+        let device = utils::get_gpu_index()?;
         let pq = ProQue::builder().device(device).src(src).dims(n).build()?;
 
         let srcbuff = Buffer::builder()
