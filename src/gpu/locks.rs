@@ -18,7 +18,9 @@ impl GPULock {
     pub fn lock() -> GPULock {
         debug!("Acquiring GPU lock...");
         let f = File::create(tmp_path(GPU_LOCK_NAME)).unwrap();
-        f.lock_exclusive().unwrap();
+        if !std::env::var("BELLMAN_NO_GPU_LOCK").is_ok() {
+            f.lock_exclusive().unwrap();
+        }
         debug!("GPU lock acquired!");
         GPULock(f)
     }
@@ -39,11 +41,16 @@ impl PriorityLock {
     pub fn lock() -> PriorityLock {
         debug!("Acquiring priority lock...");
         let f = File::create(tmp_path(PRIORITY_LOCK_NAME)).unwrap();
-        f.lock_exclusive().unwrap();
+        if !std::env::var("BELLMAN_NO_GPU_LOCK").is_ok() {
+            f.lock_exclusive().unwrap();
+        }
         debug!("Priority lock acquired!");
         PriorityLock(f)
     }
     pub fn wait(priority: bool) {
+        if std::env::var("BELLMAN_NO_GPU_LOCK").is_ok() {
+            return;
+        }
         if !priority {
             File::create(tmp_path(PRIORITY_LOCK_NAME))
                 .unwrap()
@@ -52,6 +59,9 @@ impl PriorityLock {
         }
     }
     pub fn should_break(priority: bool) -> bool {
+        if std::env::var("BELLMAN_NO_GPU_LOCK").is_ok() {
+            return false;
+        }
         !priority
             && File::create(tmp_path(PRIORITY_LOCK_NAME))
                 .unwrap()

@@ -1,5 +1,7 @@
-use log::{info, warn};
+use log::{info, warn, error};
 use rust_gpu_tools::*;
+use crate::gpu::error::{GPUError, GPUResult};
+
 use std::collections::HashMap;
 use std::env;
 
@@ -84,4 +86,25 @@ pub fn dump_device_list() {
 pub fn test_list_devices() {
     let _ = env_logger::try_init();
     dump_device_list();
+}
+
+#[cfg(feature = "gpu")]
+lazy_static::lazy_static! {
+    pub static ref GPU_NVIDIA_DEVICES: Vec<opencl::Device> = opencl::Device::by_brand(opencl::Brand::Nvidia).unwrap_or_default();
+}
+
+pub fn get_gpu_index() -> GPUResult<opencl::Device> {
+    let devices = &GPU_NVIDIA_DEVICES;
+    if devices.is_empty() {
+        return Err(GPUError::Simple("No working GPUs found!"));
+    }
+    let index: usize = std::env::var("BELLMAN_GPU_INDEX").or::<std::env::VarError>(Ok(String::from("0")))
+        .and_then(|v| match v.parse() {
+            Ok(val) => Ok(val),
+            Err(_) => {
+                error!("Invalid BELLMAN_GPU_INDEX! Defaulting to 0...");
+                Ok(0)
+            }
+        }).unwrap();
+    Ok(devices[index].clone())
 }

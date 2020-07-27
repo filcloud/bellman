@@ -225,7 +225,7 @@ where
 
         let devices = opencl::Device::all()?;
 
-        let kernels: Vec<_> = devices
+        let kernels: Vec<_> = vec![utils::get_gpu_index()?]
             .into_iter()
             .map(|d| (d.clone(), SingleMultiexpKernel::<E>::create(d, priority)))
             .filter_map(|(device, res)| {
