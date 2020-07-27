@@ -3,6 +3,7 @@ use crate::gpu::{
     error::{GPUError, GPUResult},
     locks, sources,
 };
+use super::utils;
 use ff::Field;
 use log::info;
 use rust_gpu_tools::*;
@@ -30,6 +31,7 @@ where
     pub fn create(priority: bool) -> GPUResult<FFTKernel<E>> {
         let lock = locks::GPULock::lock();
 
+        /*
         let devices = opencl::Device::all();
         if devices.is_empty() {
             return Err(GPUError::Simple("No working GPUs found!"));
@@ -37,6 +39,8 @@ where
 
         // Select the first device for FFT
         let device = devices[0].clone();
+        */
+        let device = utils::get_gpu_index()?;
 
         let src = sources::kernel::<E>(device.brand() == opencl::Brand::Nvidia);
 

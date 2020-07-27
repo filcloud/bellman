@@ -225,9 +225,9 @@ where
 
         let devices = opencl::Device::all();
 
-        let kernels: Vec<_> = devices
+        let kernels: Vec<_> = vec![utils::get_gpu_index()?]
             .into_iter()
-            .map(|d| (d, SingleMultiexpKernel::<E>::create(d.clone(), priority)))
+            .map(|d| (d.clone(), SingleMultiexpKernel::<E>::create(d.clone(), priority)))
             .filter_map(|(device, res)| {
                 if let Err(ref e) = res {
                     error!(
