@@ -3,6 +3,7 @@ use crate::gpu::{
     error::{GPUError, GPUResult},
     locks, sources,
 };
+use super::utils;
 use ff::Field;
 use log::info;
 use rust_gpu_tools::*;
@@ -37,6 +38,7 @@ where
 
         // Select the first device for FFT
         let device = devices[0].clone();
+        let device = utils::get_gpu_index()?;
 
         let src = sources::kernel::<E>(device.brand() == opencl::Brand::Nvidia);
 
